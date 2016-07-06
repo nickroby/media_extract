@@ -2,13 +2,21 @@
 
 #Import necessary modules
 import csv
-import datetime
+import math
+import time
+from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 import ast
 import numpy as np
-from scipy.interpolate import interp1d
 import time
 
+# User inputs
+#____________________________________________________________________________________________________________________________
+
+output_filename = 'media_results.csv'
+refdate = '01-01-2005'
+
+#____________________________________________________________________________________________________________________________
 
 media_sites = []
 sites_key = []
@@ -17,18 +25,10 @@ keyword_list = [] #tags
 commands = {}
 #byday = [] an array named after the days ave been established
 error = 0
-d_media_byphrase_date_in = {} #d means this is organized by day, byphrase is signifying the key is the keyword
-d_media_byphrase_number_in = {}
-m_media_byphrase_date_in = {}
-m_media_byphrase_number_in = {}
-d_media_byphrase_date_ex = {}
-d_media_byphrase_number_ex = {}
-m_media_byphrase_date_ex = {}
-m_media_byphrase_number_ex = {}
+
 xmonth = []
 media_byphrase_month_in = {}
 media_byphrase_month_ex = {}
-#title_list = [] named within loop
 miss = 0
 itval = 1
 
@@ -36,9 +36,11 @@ itval = 1
 DK = ['AIzaSyAcuvJhmNsmSeuIgUF6c_LzIcmxRHW8nUA',
     'AIzaSyAbT0JKJeWw9kBFnJA0xLb9oRhAb3eFUIE',
     'AIzaSyBilrGb3kC2QWto52SKKOATPiLOZsbhNro',
+    'f86142f91017335a828ca4c42554d1c448f395df',
+    'AIzaSyA4jTMoTLQ84uXEPrNggzXv-S38gT2Lrvw',
     'AIzaSyC05WyhgmafGYoaSPzw3oA5TqhInYi75pI']#,
     #'AIzaSyCfOCEo0UAgn4xxi8ujzwpLQz3rdjIOMYA']
-DKnum = 0
+DKnum = 5
 
 #First extract the websites to a list without other information
 with open('mediasites2.csv', 'rb') as s:
@@ -56,7 +58,7 @@ with open('keywords2.csv', 'rb') as s:
         keywords.append(x[1])
 
 #load in api specific code
-with open('codes.csv','rb') as s:
+with open('codes_pb.csv','rb') as s:
     rdr = csv.reader(s)
     for x in rdr:
         keys = x
@@ -83,197 +85,76 @@ with open('topics2.csv', 'rb') as s:
     for x in rdr:
         topics = x
 
-#establish 1/1/2005 as day 0 and create an array of days (each day is first of month)
-refdate = datetime.datetime(2005,1,1)
-for year in range(2005,2016):
-    for month in range(1,13):
-        agg = datetime.datetime(year,month,1)
-        aggref = int((agg-refdate).days)
-        xmonth.append(aggref)
-
 #set up variable dateres, used to restrict search results to after 1/1/2005
-today = datetime.datetime.now()
+today = datetime.now().date()
 daydelta = today - refdate
 past = int(daydelta.days)
 dateres = 'd%s' %(past)
 
-lastday = int((datetime.datetime.now()-refdate).days)
-xday = (np.linspace(0,lastday,lastday+1)).tolist()
-byday = np.zeros(len(xday)) #xday is an array with the list of days that occured since 1/1/2005 (with 1/1/2005 being 0), creates an appendable array, byday, with each index being the day of interest
-
-
 #____________________________________________________________________________________________________________________________
-#for single phrase correlation
+# Get dump of all media results for the time period
 #____________________________________________________________________________________________________________________________
 
-with open('media_results_day_in.csv', 'wb') as f:
-    print 'here'
+with open(output_filename, 'wb') as f:
+
     wtr = csv.writer(f)
-    for k in range(0,len(keywords)): #for each keyword there is another dictionary
-        #key for these dictionaries will be the specific site (example: d_media_byphrase_date_in[keyword][mediasite])
-        d_media_byphrase_date_in[keywords[k]] = {}
-        d_media_byphrase_number_in[keywords[k]] = {}
-        m_media_byphrase_date_in[keywords[k]] = {}
-        m_media_byphrase_number_in[keywords[k]] = {}
-        wtr.writerow([keywords[k]])
-        for n in range(0,len(media_sites)): #for each site, creating a new dictionary
-            title_list = ['first'] #creating an array to be changed later
-            d_media_byphrase_date_in[keywords[k]][sites_key[n]] = {}
-            d_media_byphrase_number_in[keywords[k]][sites_key[n]] = {}
-            r = 1 #this is the number of results that have been seen so far (indexed at 1)
-            print 'yay'
-            print DK
-            #try to establish connection and get results from google api, if cannot, switch DK (developer keys)
-            try:
-                service = build("customsearch", "v1", developerKey=DK[DKnum])
-                query = "site:%s '%s'" %(media_sites[n],keywords[k])
-                res = service.cse().list(q = query, cx ='015907315053208763487:ihyujd_at7y', exactTerms = 'California', dateRestrict = dateres).execute()
-            except:
-                current_day = datetime.datetime.now().day
-                if DKnum < len(DK) - 1:
-                    DKnum = DKnum + 1
-                else:
-                    while DKnum != 0:
-                        DKnum = input('Change DK array index to beginning. Please type 0: ')
-                while datetime.datetime.now().day == current_day:
-                    time.sleep(300) #sleep for 300 seconds
-                    
-            #step thruogh each of the ten google api results
-            for index in range(0,9):
-                #try to use the api specific code, if not work, goes to more general trials
-                try:
-                    typ = str(eval(commands['type'][n])) #adjust in excel for all three ways of extracting
-                except:
-                    #try general, if not work, skip
-                    try:
-                        w = commands['type'][20]
-                        w = w.split()
-                        q = str(eval(w[0][1:-1]))
-                        typ = str(eval(w[1][0:-1]))
-                    except:
-                        typ = 'pass'
-                        error = error + 1
-    
-                #if found and type is article...
-                if typ == 'article':
-                    #extract title
-                    try:
-                        title = eval(commands['title'][n]).encode('ascii','ignore')
-                        #if not in list of titles previously extracted: add to title list, get date, convert date to datetime and extract the number day since 1/1/2005
-                        if title not in title_list:
-                            title_list.append(title[0])
-                            ####keyword_to_add = eval(commands['keyword'][n])
-                            ####keyword_list.append(keyword_to_add)
-                            w = commands['date'][n]
-                            w = w.split()
-                            s = eval(w[0][1:-1])
-                            day = eval(w[1][0:-1] + ', ' + w[2][0:-1] + ', ' + w[3][0:-1])
-                            day = int((day-refdate).days)
-                            #if day lies within our desired time range, add to byday
-                            if day > 0:
-                                byday[day] = byday[day] + 1
-                    #if not able to be evaluated, counts as a miss
-                    except KeyError:
-                        miss = miss + 1
-                r = r + itval
-            results = int(res['searchInformation']['totalResults']) #results is used to estimate number of search to look through
-            
-            while r < results:
-                #attempt to step through each page
-                startindex = r
+
+    for k in range(len(keywords)): #for each keyword there is another dictionary
+
+        keyword = keywords[k]
+
+        for n in range(len(media_sites)): #for each site, creating a new dictionary
+
+            site = media_sites[n]  
+            # Reset the results counter to 1 for the given keyphrase and mediasite 
+            rn_tot = 1
+            # Reset the start date to 01-01-2005 for the given keyphrase and mediasite
+
+            rn = 1 # Reset the number of results from the keyword, media_site and week that have been seen so far to 1  
+            start_time = time.time()
+
+            while True:
+                            
+                rn_low  = rn
                 
                 #repeat from what is above
                 try:
                     service = build("customsearch", "v1", developerKey=DK[DKnum])
                     query = "site:%s '%s'" %(media_sites[n],keywords[k])
-                    res = service.cse().list(q = query, cx ='015907315053208763487:ihyujd_at7y', exactTerms = 'California', lowRange = lowr, highRange = highr, dateRestrict = dateres).execute()
-                except:
-                    r = r + itval
-                
-                #step through each result given by api query
-                for index in range(0,res['queries']['request'][0]['count']):
-                    try:
-                        typ = str(eval(commands['type'][n]))
-                    except:
+                    res = service.cse().list(q = query, cx ='015907315053208763487:ihyujd_at7y', exactTerms = 'California', start = rn_low, dateRestrict = dateres).execute()
+                    n_tot_res = int(res['searchInformation']['totalResults'])
+
+                    # Get the number of results in the given query
+                    n_res = res['queries']['request'][0]['count']
+
+                    # step through each of the ten google api results
+                    for index in range(n_res):
+                        #try to use the api specific code, if not work, goes to more general trials
                         try:
-                            w = commands['type'][4]
-                            w = w.split()
-                            q = str(eval(w[0][1:-1]))
-                            typ = str(eval(w[1][0:-1]))
+                            media_type_1 = str(eval(commands['type'][n])) #adjust in excel for all three ways of extracting
                         except:
-                            typ = 'pass'
-                            error = error + 1
-                    if typ == 'article':
+                            #try general, if not work, skip
+                            try:
+                                w = commands['type'][20]
+                                w = w.split()
+                                q = str(eval(w[0][1:-1]))
+                                typ = str(eval(w[1][0:-1]))
+                            except:
+                                typ = 'pass'
+                                error = error + 1
                         try:
                             title = eval(commands['title'][n]).encode('ascii','ignore')
-                            if title in title_list:
-                                title_list.append(title[0])
-                                w = commands['date'][n]
-                                w = w.split()
-                                s = eval(w[0][1:-1])
-                                day = eval(w[1][0:-1] + ', ' + w[2][0:-1] + ', ' + w[3][0:-1])
-                                day = int((day-refdate).days)
-                                if day > 0:
-                                    try:
-                                        byday[day] = byday[day] + 1
-                                    except KeyError:
-                                        byday[day] = 1
                         except KeyError:
-                            miss = miss + 1
-                    r = r + itval
-            
-            d_media_byphrase_date_in[keywords[k]][sites_key[n]] = xday #day (each day since 1/1/2005) (could have 0 articles)
-            d_media_byphrase_number_in[keywords[k]][sites_key[n]] = [] #set up array to be appended
-            for dictkey in xday:
-                d_media_byphrase_number_in[keywords[k]][sites_key[n]].append(byday[dictkey])
-            
-            xw = np.asarray(d_media_byphrase_date_in[keywords[k]][sites_key[n]])
-            yw = np.asarray(d_media_byphrase_number_in[keywords[k]][sites_key[n]])
-            row = ['sources']+xw.tolist()
-            wtr.writerow(row)
-            nxtrow = [sites_key[n]]+yw.tolist()
-            wtr.writerow(nxtrow)
-            
-        #____________________________________________________________________________________________________________________
-        #for aggregation
-        #____________________________________________________________________________________________________________________
-    
-        for n in range(0,len(media_sites)):
-            m_media_byphrase_date_in[keywords[k]][sites_key[n]] = []
-            m_media_byphrase_number_in[keywords[k]][sites_key[n]] = []
-            for frst in range(0,len(xmonth)-1):
-                m_media_byphrase_date_in[keywords[k]][sites_key[n]].append(xmonth[frst+1]-1) #saves first day of month
-                collect = []
-                for var in xday:
-                    if var >= xmonth[frst] and var < xmonth[frst+1]:
-                        try:
-                            collect.append(d_media_byphrase_number_in[keywords[k]][sites_key[n]][d_media_byphrase_date_in[keywords[k]][sites_key[n]].index(var)])
-                        except ValueError:
-                            collect.append(0)
-                m_media_byphrase_number_in[keywords[k]][sites_key[n]].append(sum(collect))
-    
+                            miss = miss + 1  
+                        date = eval(commands['date'][n])
+                        row = [site, keyword, title, date, media_type_1]
+                        wtr.writerow(row)
+                        rn += 1
+                        rn_tot += 1
+                except:
+                    break
+                if time.time() - start_time > 120:
+                    print 'Request for results for %s to %s for keyword: "%s" and media source: "%s" timed out' %(refdate, today, keyword, site)
+                    break
 
-    
-#____________________________________________________________________________________________________________________________
-#write to file (month and article database)
-#____________________________________________________________________________________________________________________________
-            
-            
-with open('media_results_month_in.csv', 'wb') as f:
-    wtr = csv.writer(f)
-    for k in range(0,len(keywords)):
-        wtr.writerow([keywords[k]])
-        for n in range(0,len(sites_key)):
-            xw = np.asarray(m_media_byphrase_date_in[keywords[k]][sites_key[n]])
-            yw = np.asarray(m_media_byphrase_number_in[keywords[k]][sites_key[n]])
-            row = ['sources']+xw.tolist()
-            wtr.writerow(row)
-            nxtrow = [sites_key[n]]+yw.tolist()
-            wtr.writerow(nxtrow)
-            
-with open('article_information', 'wb') as f:
-    wtr = csv.writer(f)
-    for k in range(0,len(keywords)):    
-        wtr.writerow([keywords[k]])
-        for n in range(title_list):
-            wtr.writerow([title_list[n]])
+            print '%s results retrieved for keyword: "%s" and media source: "%s"' %(rn_tot-1, keyword, site)    
